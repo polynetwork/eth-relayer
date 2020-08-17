@@ -49,8 +49,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/polynetwork/eth_relayer/tools"
 
 	onttypes "github.com/polynetwork/poly/core/types"
@@ -62,7 +60,6 @@ type AllianceManager struct {
 	currentHeight uint32
 	ethClient     *ethclient.Client
 	contractAbi   *abi.ABI
-	signer        ethcommon.Address
 	nonceManager  *tools.NonceManager
 	ethSigner     *tools.ETHSigner
 	exitChan      chan int
@@ -81,7 +78,6 @@ func NewAllianceManager(servCfg *config.ServiceConfig, startblockHeight uint32, 
 		multiSdk:      alliancesdk,
 		currentHeight: startblockHeight,
 		contractAbi:   &contractabi,
-		signer:        ethcommon.HexToAddress(servCfg.ETHConfig.Signer),
 		ethClient:     ethereumsdk,
 		nonceManager:  tools.NewNonceManager(ethereumsdk),
 		ethSigner:     tools.NewETHSigner(servCfg.ETHConfig),
@@ -175,7 +171,6 @@ func (this *AllianceManager) handleNewBlock(height uint32) bool {
 
 func (this *AllianceManager) commitGenesisHeader(header *onttypes.Header) bool {
 	headerdata := header.GetMessage()
-	signerAddress := this.signer
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
 		log.Errorf("commitGenesisHeader - get suggest sas price failed error: %s", err.Error())
@@ -211,9 +206,10 @@ func (this *AllianceManager) commitGenesisHeader(header *onttypes.Header) bool {
 		return false
 	}
 
+	accArr := this.ethSigner.GetAccounts()
 	contractaddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCMContractAddress)
 	callMsg := ethereum.CallMsg{
-		From: signerAddress, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
+		From: accArr[0].Address, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
 		Value: big.NewInt(0), Data: txData,
 	}
 
@@ -223,18 +219,9 @@ func (this *AllianceManager) commitGenesisHeader(header *onttypes.Header) bool {
 		return false
 	}
 
-	nounce := this.nonceManager.GetAddressNonce(signerAddress)
+	nounce := this.nonceManager.GetAddressNonce(accArr[0].Address)
 	tx := types.NewTransaction(nounce, contractaddr, big.NewInt(0), gasLimit, gasPrice, txData)
-	bf := new(bytes.Buffer)
-
-	err = rlp.Encode(bf, tx)
-	if err != nil {
-		log.Errorf("commitGenesisHeader - rlp encode eth transaction error: %s", err.Error())
-		return false
-	}
-
-	rawtx := hexutil.Encode(bf.Bytes())
-	signedtx, err := this.ethSigner.SignRawTx(rawtx)
+	signedtx, err := this.ethSigner.SignTransaction(tx)
 	if err != nil {
 		log.Errorf("commitGenesisHeader - sign raw tx error: %s", err.Error())
 		return false
@@ -252,7 +239,6 @@ func (this *AllianceManager) commitGenesisHeader(header *onttypes.Header) bool {
 
 func (this *AllianceManager) commitHeader(header *onttypes.Header) bool {
 	headerdata := header.GetMessage()
-	signerAddress := this.signer
 	var (
 		txData      []byte
 		txErr       error
@@ -292,10 +278,11 @@ func (this *AllianceManager) commitHeader(header *onttypes.Header) bool {
 		log.Errorf("commitHeader - err:" + err.Error())
 		return false
 	}
-	//
+
+	accArr := this.ethSigner.GetAccounts()
 	contractaddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCMContractAddress)
 	callMsg := ethereum.CallMsg{
-		From: signerAddress, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
+		From: accArr[0].Address, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
 		Value: big.NewInt(0), Data: txData,
 	}
 
@@ -305,18 +292,9 @@ func (this *AllianceManager) commitHeader(header *onttypes.Header) bool {
 		return false
 	}
 
-	nonce := this.nonceManager.GetAddressNonce(signerAddress)
+	nonce := this.nonceManager.GetAddressNonce(accArr[0].Address)
 	tx := types.NewTransaction(nonce, contractaddr, big.NewInt(0), gasLimit, gasPrice, txData)
-	bf := new(bytes.Buffer)
-
-	err = rlp.Encode(bf, tx)
-	if err != nil {
-		log.Errorf("commitHeader - rlp encode eth transaction error: %s", err.Error())
-		return false
-	}
-
-	rawtx := hexutil.Encode(bf.Bytes())
-	signedtx, err := this.ethSigner.SignRawTx(rawtx)
+	signedtx, err := this.ethSigner.SignTransaction(tx)
 	if err != nil {
 		log.Errorf("commitHeader - sign raw tx error: %s", err.Error())
 		return false
@@ -448,7 +426,8 @@ func (this *AllianceManager) commitDepositEventsWithHeader(header *onttypes.Head
 		log.Errorf("commitDepositEventsWithHeader - err:" + err.Error())
 		return false
 	}
-	signerAddress := this.signer
+	accArr := this.ethSigner.GetAccounts()
+	signerAddress := accArr[0].Address
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
 		log.Errorf("commitDepositEventsWithHeader - get suggest sas price failed error: %s", err.Error())
@@ -508,15 +487,10 @@ func (this *AllianceManager) getRouter(args []byte) string {
 }
 
 func (this *AllianceManager) sendTxToEth(info *EthTxInfo) bool {
-	nounce := this.nonceManager.GetAddressNonce(this.signer)
+	accArr := this.ethSigner.GetAccounts()
+	nounce := this.nonceManager.GetAddressNonce(accArr[0].Address)
 	tx := types.NewTransaction(nounce, info.contractAddr, big.NewInt(0), info.gasLimit, info.gasPrice, info.txData)
-	bf := new(bytes.Buffer)
-	if err := rlp.Encode(bf, tx); err != nil {
-		log.Errorf("commitDepositEventsWithHeader - rlp encode eth transaction error: %s", err.Error())
-		return false
-	}
-	rawtx := hexutil.Encode(bf.Bytes())
-	signedtx, err := this.ethSigner.SignRawTx(rawtx)
+	signedtx, err := this.ethSigner.SignTransaction(tx)
 	if err != nil {
 		log.Errorf("commitDepositEventsWithHeader - sign raw tx error: %s", err.Error())
 		return false
@@ -532,8 +506,7 @@ func (this *AllianceManager) sendTxToEth(info *EthTxInfo) bool {
 }
 
 func (this *AllianceManager) commitDepositEvents(height uint32, key []byte) bool {
-	signerAddress := this.signer
-
+	accArr := this.ethSigner.GetAccounts()
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
 		log.Errorf("commitDepositEvents - get suggest sas price failed error: %s", err.Error())
@@ -558,7 +531,7 @@ func (this *AllianceManager) commitDepositEvents(height uint32, key []byte) bool
 	//
 	contractaddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCMContractAddress)
 	callMsg := ethereum.CallMsg{
-		From: signerAddress, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
+		From: accArr[0].Address, To: &contractaddr, Gas: 0, GasPrice: gasPrice,
 		Value: big.NewInt(0), Data: txData,
 	}
 	gasLimit, err := this.ethClient.EstimateGas(context.Background(), callMsg)
@@ -566,17 +539,9 @@ func (this *AllianceManager) commitDepositEvents(height uint32, key []byte) bool
 		log.Errorf("commitDepositEvents - estimate gas limit error: %s", err.Error())
 		return false
 	}
-	nounce := this.nonceManager.GetAddressNonce(signerAddress)
+	nounce := this.nonceManager.GetAddressNonce(accArr[0].Address)
 	tx := types.NewTransaction(nounce, contractaddr, big.NewInt(0), gasLimit, gasPrice, txData)
-	bf := new(bytes.Buffer)
-
-	err = rlp.Encode(bf, tx)
-	if err != nil {
-		log.Errorf("commitDepositEvents - rlp encode eth transaction error: %s", err.Error())
-		return false
-	}
-	rawtx := hexutil.Encode(bf.Bytes())
-	signedtx, err := this.ethSigner.SignRawTx(rawtx)
+	signedtx, err := this.ethSigner.SignTransaction(tx)
 	if err != nil {
 		log.Errorf("commitDepositEvents - sign raw tx error: %s", err.Error())
 		return false
