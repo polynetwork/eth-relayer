@@ -67,8 +67,6 @@ type ETHConfig struct {
 	RestURL             string
 	ECCMContractAddress string
 	ECCDContractAddress string
-	Signer              string
-	PrivateKey          string
 	CapitalOwnersPath   string
 	CapitalPassword     string
 	BlockConfig         uint64

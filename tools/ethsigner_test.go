@@ -17,48 +17,21 @@
 package tools
 
 import (
-	"context"
-	"fmt"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/polynetwork/eth_relayer/config"
 	"testing"
 )
 
-func TestETHSigner_SignRawTx(t *testing.T) {
-
-	data := "000000000000000000000000000000000000001032323433653139323364353532326665376330333432613137376365333265633436316237313163623638373066373161376233313336343233363033383937"
-
-	cfg := config.NewServiceConfig("../config.json")
+func TestETHSigner_SignTransaction(t *testing.T) {
+	cfg := config.NewServiceConfig("./config-debug.json")
 	ethsigner := NewETHSigner(cfg.ETHConfig)
-	s, err := ethsigner.SignRawTx(data)
+	tx := &types.Transaction{}
+	tx, err := ethsigner.SignTransaction(tx)
 	if err != nil {
-		fmt.Printf("err:%s\n", err.Error())
 		t.Fatal(err)
 	}
-	fmt.Printf("signed tx :%v\n", s)
-
-	client, err := ethclient.Dial("http://139.219.131.74:10331")
-	if err != nil {
-		return
+	v, r, s := tx.RawSignatureValues()
+	if v.BitLen() + r.BitLen() + s.BitLen() <= 0 {
+		t.Fatal("failed to sign")
 	}
-
-	//signedTx := &types.Transaction{}
-	//txdata, err := hexutil.Decode(s)
-	//if err != nil {
-	//	return
-	//}
-	//
-	//err = rlp.DecodeBytes(txdata, signedTx)
-	//if err != nil {
-	//	fmt.Printf("[signOEP4Tx]rlp.DecodeBytes error:%s\n", err.Error())
-	//	return
-	//}
-	fmt.Println("before send....")
-	err = client.SendTransaction(context.Background(), s)
-	if err != nil {
-		fmt.Printf("[signOEP4Tx]SendTransaction error:%s\n", err.Error())
-		return
-	}
-	fmt.Println("after send....")
-
 }

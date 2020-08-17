@@ -25,6 +25,7 @@ import (
 	"github.com/polynetwork/eth_relayer/log"
 	"github.com/polynetwork/eth_relayer/manager"
 	sdk "github.com/polynetwork/poly-go-sdk"
+	"github.com/polynetwork/poly/common/password"
 	"github.com/urfave/cli"
 	"os"
 	"os/signal"
@@ -95,6 +96,16 @@ func startServer(ctx *cli.Context) {
 	if servConfig == nil {
 		log.Errorf("startServer - create config failed!")
 		return
+	}
+
+	if servConfig.ETHConfig.CapitalPassword == "" {
+		fmt.Println("please input the password for ethereum keystore: ")
+		raw, err := password.GetPassword()
+		if err != nil {
+			log.Fatalf("failed to input password: %v", err)
+			panic(err)
+		}
+		servConfig.ETHConfig.CapitalPassword = string(raw)
 	}
 
 	// create alliance sdk

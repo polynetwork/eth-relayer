@@ -130,7 +130,7 @@ func NewEthereumManager(servconfig *config.ServiceConfig, startheight uint64, st
 			return nil, err
 		}
 	}
-	log.Infof("NewETHManager - ont admin address: %s", signer.Address.ToBase58())
+	log.Infof("NewETHManager - poly address: %s", signer.Address.ToBase58())
 
 	mgr := &EthereumManager{
 		config:         servconfig,

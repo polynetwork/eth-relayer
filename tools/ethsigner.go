@@ -17,16 +17,10 @@
 package tools
 
 import (
-	"bytes"
 	"fmt"
-
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
-	ethComm "github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/polynetwork/eth_relayer/config"
 	"github.com/polynetwork/eth_relayer/log"
 )
@@ -40,98 +34,36 @@ func NewETHSigner(sigConfig *config.ETHConfig) *ETHSigner {
 	service := &ETHSigner{}
 	capitalKeyStore := keystore.NewKeyStore(sigConfig.CapitalOwnersPath, keystore.StandardScryptN,
 		keystore.StandardScryptP)
+
+	accArr := capitalKeyStore.Accounts()
+	if len(accArr) == 0 {
+		log.Fatal("relayer has no account")
+		panic(fmt.Errorf("relayer has no account"))
+	}
+	str := ""
+	for i, v := range accArr {
+		str += fmt.Sprintf("(no.%d acc: %s), ", i+1, v.Address.String())
+	}
+	log.Infof("relayer are using accounts: [ %s ]", str)
+
 	service.capitalKeyStore = capitalKeyStore
-
-	key, err := crypto.HexToECDSA(sigConfig.PrivateKey)
-	if err != nil {
-		log.Errorf("cannot decode private key")
-		return nil
-	}
-
-	addr := ethComm.HexToAddress(sigConfig.Signer)
-	if !capitalKeyStore.HasAddress(addr) {
-		account, err := capitalKeyStore.ImportECDSA(key, sigConfig.CapitalPassword)
-		if err != nil {
-			log.Errorf("import failed, err: %s", err)
-		} else {
-			log.Infof("import success, path: %s", account.URL.Path)
-		}
-	}
-
 	service.sigConfig = sigConfig
 	return service
 }
 
-func (this *ETHSigner) SignRawTx(rawtx string) (*types.Transaction, error) {
-
-	signer := this.sigConfig.Signer
-	signedTx, err := this.signCapitalTransaction(rawtx, signer)
-	if err != nil {
-		err = fmt.Errorf("SignRawTx: err: %s", err)
-		log.Error(err)
-		return nil, err
+// TODO: only use the first one now. Will add a account manager in the future.
+func (this *ETHSigner) SignTransaction(tx *types.Transaction) (*types.Transaction, error) {
+	accArr := this.capitalKeyStore.Accounts()
+	if len(accArr) == 0 {
+		return nil, fmt.Errorf("length of accounts is zero")
 	}
-
-	return signedTx, nil
-}
-
-func (this *ETHSigner) signCapitalTx(rawTx string, signer string) (signedRawTx, hash string, err error) {
-	unsignedTx, err := deserializeTx(rawTx)
-	if err != nil {
-		return "", "", fmt.Errorf("signCapitalTx: failed, err: %s", err)
-	}
-	account := accounts.Account{Address: ethComm.HexToAddress(signer)}
-	err = this.capitalKeyStore.TimedUnlock(account, this.sigConfig.CapitalPassword, config.KEY_UNLOCK_TIME)
-	if err != nil {
-		return "", "", fmt.Errorf("signCapitalTx: unlock account %s failed: %s", signer, err)
-	}
-	signedTx, err := this.capitalKeyStore.SignTx(account, unsignedTx, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("signCapitalTx: sign tx failed, err: %s", err)
-	}
-	log.Infof("signAccountTx: use account %s sign", signer)
-	signedRawTx, err = serializeTx(signedTx)
-	if err != nil {
-		return "", "", fmt.Errorf("signCapitalTx: failed, err: %s", err)
-	}
-	return signedRawTx, signedTx.Hash().String(), nil
-}
-
-func (this *ETHSigner) signCapitalTransaction(rawTx string, signer string) (*types.Transaction, error) {
-	unsignedTx, err := deserializeTx(rawTx)
+	tx, err := this.capitalKeyStore.SignTxWithPassphrase(accArr[0], this.sigConfig.CapitalPassword, tx, nil)
 	if err != nil {
 		return nil, err
-	}
-	account := accounts.Account{Address: ethComm.HexToAddress(signer)}
-	err = this.capitalKeyStore.TimedUnlock(account, this.sigConfig.CapitalPassword, config.KEY_UNLOCK_TIME)
-	if err != nil {
-		return nil, err
-	}
-	signedTx, err := this.capitalKeyStore.SignTx(account, unsignedTx, nil)
-	if err != nil {
-		return nil, err
-	}
-	log.Infof("signAccountTx: use account %s sign", signer)
-
-	return signedTx, nil
-}
-
-func deserializeTx(rawTx string) (*types.Transaction, error) {
-	txData := ethComm.FromHex(rawTx)
-	tx := &types.Transaction{}
-	err := rlp.DecodeBytes(txData, tx)
-	if err != nil {
-		return nil, fmt.Errorf("deserializeTx: err: %s", err)
 	}
 	return tx, nil
 }
 
-func serializeTx(tx *types.Transaction) (string, error) {
-	bf := new(bytes.Buffer)
-	err := rlp.Encode(bf, tx)
-	if err != nil {
-		return "", fmt.Errorf("signTx: encode signed tx err: %s", err)
-	}
-	signedRawTx := hexutil.Encode(bf.Bytes())
-	return signedRawTx, nil
+func (this *ETHSigner) GetAccounts() []accounts.Account {
+	return this.capitalKeyStore.Accounts()
 }
