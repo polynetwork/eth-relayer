@@ -35,7 +35,7 @@ import (
 var ConfigPath string
 var LogDir string
 var StartHeight uint64
-var McStartHeight uint64
+var PolyStartHeight uint64
 var StartForceHeight uint64
 
 func setupApp() *cli.App {
@@ -49,7 +49,7 @@ func setupApp() *cli.App {
 		cmd.ConfigPathFlag,
 		cmd.EthStartFlag,
 		cmd.EthStartForceFlag,
-		cmd.MCStartFlag,
+		cmd.PolyStartFlag,
 		cmd.LogDir,
 	}
 	app.Commands = []cli.Command{}
@@ -85,9 +85,9 @@ func startServer(ctx *cli.Context) {
 	if ethstartforce > 0 {
 		StartForceHeight = ethstartforce
 	}
-	mcstart := ctx.GlobalUint64(cmd.GetFlagName(cmd.MCStartFlag))
-	if mcstart > 0 {
-		McStartHeight = mcstart
+	polyStart := ctx.GlobalUint64(cmd.GetFlagName(cmd.PolyStartFlag))
+	if polyStart > 0 {
+		PolyStartHeight = polyStart
 	}
 
 	// read config
@@ -164,9 +164,9 @@ func initETHServer(servConfig *config.ServiceConfig, polysdk *sdk.PolySdk, ether
 }
 
 func initPolyServer(servConfig *config.ServiceConfig, polysdk *sdk.PolySdk, ethereumsdk *ethclient.Client, boltDB *db.BoltDB) {
-	mgr, err := manager.NewPolyManager(servConfig, uint32(McStartHeight), polysdk, ethereumsdk, boltDB)
+	mgr, err := manager.NewPolyManager(servConfig, uint32(PolyStartHeight), polysdk, ethereumsdk, boltDB)
 	if err != nil {
-		log.Error("initMCServer - mc service start failed")
+		log.Error("initPolyServer - PolyServer service start failed")
 		return
 	}
 	go mgr.MonitorChain()

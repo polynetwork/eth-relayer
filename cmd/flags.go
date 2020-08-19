@@ -66,7 +66,7 @@ var (
 		Value: uint64(0),
 	}
 
-	MCStartFlag = cli.Uint64Flag{
+	PolyStartFlag = cli.Uint64Flag{
 		Name:  "poly",
 		Usage: "poly start block height ",
 		Value: uint64(0),
