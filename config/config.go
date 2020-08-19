@@ -13,7 +13,7 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package config
 
 import (
@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/polynetwork/eth_relayer/log"
@@ -50,13 +51,13 @@ const (
 //}
 
 type ServiceConfig struct {
-	MultiChainConfig *MultiChainConfig
-	ETHConfig        *ETHConfig
-	BoltDbPath       string
+	PolyConfig *PolyConfig
+	ETHConfig  *ETHConfig
+	BoltDbPath string
 	RoutineNum int64
 }
 
-type MultiChainConfig struct {
+type PolyConfig struct {
 	RestURL                 string
 	EntranceContractAddress string
 	WalletFile              string
@@ -67,8 +68,8 @@ type ETHConfig struct {
 	RestURL             string
 	ECCMContractAddress string
 	ECCDContractAddress string
-	CapitalOwnersPath   string
-	CapitalPassword     string
+	KeyStorePath        string
+	KeyStorePwdSet      map[string]string
 	BlockConfig         uint64
 }
 
@@ -105,6 +106,11 @@ func NewServiceConfig(configFilePath string) *ServiceConfig {
 	if err != nil {
 		log.Errorf("NewServiceConfig: failed, err: %s", err)
 		return nil
+	}
+
+	for k, v := range servConfig.ETHConfig.KeyStorePwdSet {
+		delete(servConfig.ETHConfig.KeyStorePwdSet, k)
+		servConfig.ETHConfig.KeyStorePwdSet[strings.ToLower(k)] = v
 	}
 
 	return servConfig

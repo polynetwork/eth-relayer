@@ -457,6 +457,8 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pkg/profile v1.2.1/go.mod h1:hJw3o1OdXxsrSjjVksARp5W95eeEaEfptyVZyv6JUPA=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
+github.com/polynetwork/eth-contracts v0.0.0-20200814062128-70f58e22b014 h1:fbVjTnsS7nZwsTtRdbv+2162e/odNN1rqfLf/gBmhAM=
+github.com/polynetwork/eth-contracts v0.0.0-20200814062128-70f58e22b014/go.mod h1:TeePrYZfWJAwuksPlie7RPequ51Ujp5l/JY6TcutsFc=
 github.com/polynetwork/poly v0.0.0-20200715030435-4f1d1a0adb44 h1:QXznsPhBBa1vY6Fhav8S9+qoHBi8iGy6g1VeIMdYglI=
 github.com/polynetwork/poly v0.0.0-20200715030435-4f1d1a0adb44/go.mod h1:UzlGEWk0eCGsuMJOZfBoZjRbmu4Yw/SudKAIFe1gPnY=
 github.com/polynetwork/poly v0.0.0-20200722075529-eea88acb37b2 h1:t4zDeTSvzn8Mo2jxUwg8WImqih3ZZWoytTFcnbpGZuU=

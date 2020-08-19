@@ -13,7 +13,7 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package tools
 
 import (
@@ -24,14 +24,14 @@ import (
 
 func TestETHSigner_SignTransaction(t *testing.T) {
 	cfg := config.NewServiceConfig("./config-debug.json")
-	ethsigner := NewETHSigner(cfg.ETHConfig)
+	ethsigner := NewEthKeyStore(cfg.ETHConfig)
 	tx := &types.Transaction{}
 	tx, err := ethsigner.SignTransaction(tx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	v, r, s := tx.RawSignatureValues()
-	if v.BitLen() + r.BitLen() + s.BitLen() <= 0 {
+	if v.BitLen()+r.BitLen()+s.BitLen() <= 0 {
 		t.Fatal("failed to sign")
 	}
 }

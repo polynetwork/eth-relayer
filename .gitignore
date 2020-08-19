@@ -6,3 +6,4 @@ config.json
 wallet.dat
 config-debug.json
 log/20*
+UTC--*
