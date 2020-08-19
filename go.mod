@@ -12,4 +12,5 @@ require (
 	github.com/polynetwork/poly-go-sdk v0.0.0-20200729103825-af447ef53ef0
 	github.com/urfave/cli v1.22.4
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	github.com/polynetwork/eth-contracts v0.0.0-20200814062128-70f58e22b014
 )

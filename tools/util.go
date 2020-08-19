@@ -13,17 +13,25 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package tools
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/polynetwork/eth_relayer/http/utils"
+	"github.com/ontio/ontology-crypto/ec"
+	"github.com/ontio/ontology-crypto/keypair"
+	"github.com/ontio/ontology-crypto/sm2"
+	"github.com/polynetwork/poly/common"
 	"math/big"
 	"strconv"
+	"strings"
 )
 
 type jsonError struct {
@@ -90,7 +98,7 @@ type blockRsp struct {
 	Id      uint          `json:"id"`
 }
 
-func GetNodeHeader(url string, restClient *utils.RestClient, height uint64) ([]byte, error) {
+func GetNodeHeader(url string, restClient *RestClient, height uint64) ([]byte, error) {
 	params := []interface{}{fmt.Sprintf("0x%x", height), true}
 	req := &blockReq{
 		JsonRpc: "2.0",
@@ -118,7 +126,7 @@ func GetNodeHeader(url string, restClient *utils.RestClient, height uint64) ([]b
 	return block, nil
 }
 
-func GetNodeHeight(url string, restClient *utils.RestClient) (uint64, error) {
+func GetNodeHeight(url string, restClient *RestClient) (uint64, error) {
 	req := &heightReq{
 		JsonRpc: "2.0",
 		Method:  "eth_blockNumber",
@@ -149,7 +157,7 @@ func GetNodeHeight(url string, restClient *utils.RestClient) (uint64, error) {
 	}
 }
 
-func GetProof(url string, contractAddress string, key string, blockheight string, restClient *utils.RestClient) ([]byte, error) {
+func GetProof(url string, contractAddress string, key string, blockheight string, restClient *RestClient) ([]byte, error) {
 	req := &proofReq{
 		JsonRPC: "2.0",
 		Method:  "eth_getProof",
@@ -186,4 +194,85 @@ func EncodeBigInt(b *big.Int) string {
 		return "00"
 	}
 	return hex.EncodeToString(b.Bytes())
+}
+
+func ParseAuditpath(path []byte) ([]byte, []byte, [][32]byte, error) {
+	source := common.NewZeroCopySource(path)
+	/*
+		l, eof := source.NextUint64()
+		if eof {
+			return nil, nil, nil, nil
+		}
+	*/
+	value, eof := source.NextVarBytes()
+	if eof {
+		return nil, nil, nil, nil
+	}
+	size := int((source.Size() - source.Pos()) / common.UINT256_SIZE)
+	pos := make([]byte, 0)
+	hashs := make([][32]byte, 0)
+	for i := 0; i < size; i++ {
+		f, eof := source.NextByte()
+		if eof {
+			return nil, nil, nil, nil
+		}
+		pos = append(pos, f)
+
+		v, eof := source.NextHash()
+		if eof {
+			return nil, nil, nil, nil
+		}
+		var onehash [32]byte
+		copy(onehash[:], (v.ToArray())[0:32])
+		hashs = append(hashs, onehash)
+	}
+
+	return value, pos, hashs, nil
+}
+
+func GetNoCompresskey(key keypair.PublicKey) []byte {
+	var buf bytes.Buffer
+	switch t := key.(type) {
+	case *ec.PublicKey:
+		switch t.Algorithm {
+		case ec.ECDSA:
+			// Take P-256 as a special case
+			if t.Params().Name == elliptic.P256().Params().Name {
+				return ec.EncodePublicKey(t.PublicKey, false)
+			}
+			buf.WriteByte(byte(0x12))
+		case ec.SM2:
+			buf.WriteByte(byte(0x13))
+		}
+		label, err := GetCurveLabel(t.Curve.Params().Name)
+		if err != nil {
+			panic(err)
+		}
+		buf.WriteByte(label)
+		buf.Write(ec.EncodePublicKey(t.PublicKey, false))
+	case ed25519.PublicKey:
+		panic("err")
+	default:
+		panic("err")
+	}
+	return buf.Bytes()
+}
+
+func GetCurveLabel(name string) (byte, error) {
+	switch strings.ToUpper(name) {
+	case strings.ToUpper(elliptic.P224().Params().Name):
+		return 1, nil
+	case strings.ToUpper(elliptic.P256().Params().Name):
+		return 2, nil
+	case strings.ToUpper(elliptic.P384().Params().Name):
+		return 3, nil
+	case strings.ToUpper(elliptic.P521().Params().Name):
+		return 4, nil
+	case strings.ToUpper(sm2.SM2P256V1().Params().Name):
+		return 20, nil
+	case strings.ToUpper(btcec.S256().Name):
+		return 5, nil
+	default:
+		panic("err")
+	}
 }

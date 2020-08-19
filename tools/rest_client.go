@@ -16,7 +16,6 @@
  * along with The ontology.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Package error privides error code for http
 /*
 * Copyright (C) 2020 The poly network Authors
 * This file is part of The poly network library.
@@ -32,21 +31,57 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
-package restful
+ */
+package tools
 
-const (
-	SUCCESS            uint32 = 0
-	FAILED             uint32 = 1
-	PARTIAL_SUCCESS    uint32 = 2
-	INVALID_METHOD     uint32 = 41001
-	INVALID_PARAMS     uint32 = 41002
-	ILLEGAL_DATAFORMAT uint32 = 41003
-	INTERNAL_ERROR     uint32 = 41004
-	INVALID_SESSION    uint32 = 41005
+import (
+	"crypto/tls"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"strings"
+	"time"
 )
 
-const (
-	InvalidParamsMessage string = "invalid params"
-	InternalErrorMessage string = "internal error"
-)
+type RestClient struct {
+	Addr       string
+	restClient *http.Client
+}
+
+func NewRestClient() *RestClient {
+	return &RestClient{
+		restClient: &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost:   5,
+				DisableKeepAlives:     false,
+				IdleConnTimeout:       time.Second * 300,
+				ResponseHeaderTimeout: time.Second * 300,
+				TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+			},
+			Timeout: time.Second * 300,
+		},
+	}
+}
+
+func (self *RestClient) SetAddr(addr string) *RestClient {
+	self.Addr = addr
+	return self
+}
+
+func (self *RestClient) SetRestClient(restClient *http.Client) *RestClient {
+	self.restClient = restClient
+	return self
+}
+
+func (self *RestClient) SendRestRequest(addr string, data []byte) ([]byte, error) {
+	resp, err := self.restClient.Post(addr, "application/json", strings.NewReader(string(data)))
+	if err != nil {
+		return nil, fmt.Errorf("http post request:%s error:%s", data, err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read rest response body error:%s", err)
+	}
+	return body, nil
+}

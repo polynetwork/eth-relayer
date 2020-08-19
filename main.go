@@ -13,7 +13,7 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package main
 
 import (
@@ -25,7 +25,6 @@ import (
 	"github.com/polynetwork/eth_relayer/log"
 	"github.com/polynetwork/eth_relayer/manager"
 	sdk "github.com/polynetwork/poly-go-sdk"
-	"github.com/polynetwork/poly/common/password"
 	"github.com/urfave/cli"
 	"os"
 	"os/signal"
@@ -98,19 +97,9 @@ func startServer(ctx *cli.Context) {
 		return
 	}
 
-	if servConfig.ETHConfig.CapitalPassword == "" {
-		fmt.Println("please input the password for ethereum keystore: ")
-		raw, err := password.GetPassword()
-		if err != nil {
-			log.Fatalf("failed to input password: %v", err)
-			panic(err)
-		}
-		servConfig.ETHConfig.CapitalPassword = string(raw)
-	}
-
-	// create alliance sdk
-	alliancesdk := sdk.NewPolySdk()
-	err := setUpPoly(alliancesdk, servConfig.MultiChainConfig.RestURL)
+	// create poly sdk
+	polySdk := sdk.NewPolySdk()
+	err := setUpPoly(polySdk, servConfig.PolyConfig.RestURL)
 	if err != nil {
 		log.Errorf("startServer - failed to setup poly sdk: %v", err)
 		return
@@ -134,8 +123,8 @@ func startServer(ctx *cli.Context) {
 		return
 	}
 
-	initETHServer(servConfig, alliancesdk, ethereumsdk, boltDB)
-	initMCServer(servConfig, alliancesdk, ethereumsdk, boltDB)
+	initETHServer(servConfig, polySdk, ethereumsdk, boltDB)
+	initPolyServer(servConfig, polySdk, ethereumsdk, boltDB)
 	waitToExit()
 }
 
@@ -163,8 +152,8 @@ func waitToExit() {
 	<-exit
 }
 
-func initETHServer(servConfig *config.ServiceConfig, alliancesdk *sdk.PolySdk, ethereumsdk *ethclient.Client, boltDB *db.BoltDB) {
-	mgr, err := manager.NewEthereumManager(servConfig, StartHeight, StartForceHeight, alliancesdk, ethereumsdk, boltDB)
+func initETHServer(servConfig *config.ServiceConfig, polysdk *sdk.PolySdk, ethereumsdk *ethclient.Client, boltDB *db.BoltDB) {
+	mgr, err := manager.NewEthereumManager(servConfig, StartHeight, StartForceHeight, polysdk, ethereumsdk, boltDB)
 	if err != nil {
 		log.Error("initETHServer - eth service start err: %s", err.Error())
 		return
@@ -174,8 +163,8 @@ func initETHServer(servConfig *config.ServiceConfig, alliancesdk *sdk.PolySdk, e
 	go mgr.CheckDeposit()
 }
 
-func initMCServer(servConfig *config.ServiceConfig, alliancesdk *sdk.PolySdk, ethereumsdk *ethclient.Client, boltDB *db.BoltDB) {
-	mgr, err := manager.NewAllianceManager(servConfig, uint32(McStartHeight), alliancesdk, ethereumsdk, boltDB)
+func initPolyServer(servConfig *config.ServiceConfig, polysdk *sdk.PolySdk, ethereumsdk *ethclient.Client, boltDB *db.BoltDB) {
+	mgr, err := manager.NewPolyManager(servConfig, uint32(McStartHeight), polysdk, ethereumsdk, boltDB)
 	if err != nil {
 		log.Error("initMCServer - mc service start failed")
 		return

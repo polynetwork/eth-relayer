@@ -28,7 +28,7 @@ Before running, you need feed the configuration file `config.json`.
 {
   "MultiChainConfig":{
     "RestURL":"http://poly_ip:20336", // address of Poly
-    "EntranceContractAddress":"0300000000000000000000000000000000000000", // CrossChainManagerContractAddress on Poly
+    "EntranceContractAddress":"0300000000000000000000000000000000000000", // CrossChainManagerContractAddress on Poly. No need to change
     "WalletFile":"./wallet.dat", // your poly wallet
     "WalletPwd":"pwd" //password
   },
@@ -36,15 +36,18 @@ Before running, you need feed the configuration file `config.json`.
     "RestURL":"http://etheruem:port", // your ethereum node 
     "ECCMContractAddress":"ethereum_cross_chain_contract", 
     "ECCDContractAddress":"ethereum_cross_chain_data_contract",
-    "CapitalOwnersPath": "./capital-owners", // path to store your ethereum wallet
-    "CapitalPassword": "pwd", // password to protect your ethereum wallet
+    "KeyStorePath": "./keystore", // path to store your ethereum wallet
+    "KeyStorePwdSet": { // password to protect your ethereum wallet
+      "0xd12e...54ccacf91ca364d": "pwd1", // password for address "0xd12e...54ccacf91ca364d"
+      "0xabb4...0aba7cf3ee3b953": "pwd2" // password for address "0xabb4...0aba7cf3ee3b953"
+    },
     "BlockConfig": 12 // blocks to confirm a ethereum tx
   },
   "BoltDbPath": "./db" // DB path
 }
 ```
 
-After that, make sure you already have a ethereum wallet with ETH. The wallet file is like `UTC--2020-08-17T03-44-00.191825735Z--d12ecafcb772bd7c774a2db3c54ccacf91ca364d` and you can use [geth](https://github.com/ethereum/go-ethereum) to create one( `./geth accounts add` ). Put it under `CapitalOwnersPath`
+After that, make sure you already have a ethereum wallet with ETH. The wallet file is like `UTC--2020-08-17T03-44-00.191825735Z--0xd12e...54ccacf91ca364d` and you can use [geth](https://github.com/ethereum/go-ethereum) to create one( `./geth accounts add` ). Put it under `KeyStorePath`. You can create more than one wallet for relayer. Relayer will send transactions concurrently by different accounts.
 
 Now, you can start relayer as follow: 
 

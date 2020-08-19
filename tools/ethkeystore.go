@@ -13,7 +13,7 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package tools
 
 import (
@@ -25,14 +25,13 @@ import (
 	"github.com/polynetwork/eth_relayer/log"
 )
 
-type ETHSigner struct {
-	capitalKeyStore *keystore.KeyStore
-	sigConfig       *config.ETHConfig
+type EthKeyStore struct {
+	ks *keystore.KeyStore
 }
 
-func NewETHSigner(sigConfig *config.ETHConfig) *ETHSigner {
-	service := &ETHSigner{}
-	capitalKeyStore := keystore.NewKeyStore(sigConfig.CapitalOwnersPath, keystore.StandardScryptN,
+func NewEthKeyStore(sigConfig *config.ETHConfig) *EthKeyStore {
+	service := &EthKeyStore{}
+	capitalKeyStore := keystore.NewKeyStore(sigConfig.KeyStorePath, keystore.StandardScryptN,
 		keystore.StandardScryptP)
 
 	accArr := capitalKeyStore.Accounts()
@@ -46,24 +45,23 @@ func NewETHSigner(sigConfig *config.ETHConfig) *ETHSigner {
 	}
 	log.Infof("relayer are using accounts: [ %s ]", str)
 
-	service.capitalKeyStore = capitalKeyStore
-	service.sigConfig = sigConfig
+	service.ks = capitalKeyStore
 	return service
 }
 
 // TODO: only use the first one now. Will add a account manager in the future.
-func (this *ETHSigner) SignTransaction(tx *types.Transaction) (*types.Transaction, error) {
-	accArr := this.capitalKeyStore.Accounts()
+func (this *EthKeyStore) SignTransaction(tx *types.Transaction, pwd string) (*types.Transaction, error) {
+	accArr := this.ks.Accounts()
 	if len(accArr) == 0 {
 		return nil, fmt.Errorf("length of accounts is zero")
 	}
-	tx, err := this.capitalKeyStore.SignTxWithPassphrase(accArr[0], this.sigConfig.CapitalPassword, tx, nil)
+	tx, err := this.ks.SignTxWithPassphrase(accArr[0], pwd, tx, nil)
 	if err != nil {
 		return nil, err
 	}
 	return tx, nil
 }
 
-func (this *ETHSigner) GetAccounts() []accounts.Account {
-	return this.capitalKeyStore.Accounts()
+func (this *EthKeyStore) GetAccounts() []accounts.Account {
+	return this.ks.Accounts()
 }

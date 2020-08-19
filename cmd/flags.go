@@ -13,7 +13,7 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package cmd
 
 import (
@@ -67,8 +67,8 @@ var (
 	}
 
 	MCStartFlag = cli.Uint64Flag{
-		Name:  "alliance",
-		Usage: "multichain start block height ",
+		Name:  "poly",
+		Usage: "poly start block height ",
 		Value: uint64(0),
 	}
 

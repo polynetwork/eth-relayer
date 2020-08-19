@@ -13,7 +13,7 @@
 * GNU Lesser General Public License for more details.
 * You should have received a copy of the GNU Lesser General Public License
 * along with The poly network . If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 package manager
 
 import (
@@ -23,8 +23,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/polynetwork/eth-contracts/go_abi/eccm_abi"
 	"github.com/polynetwork/eth_relayer/config"
-	"github.com/polynetwork/eth_relayer/contractabi/eccm_abi"
 	"github.com/polynetwork/eth_relayer/db"
 	"math/big"
 	"strings"
@@ -32,7 +32,6 @@ import (
 
 	"context"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/polynetwork/eth_relayer/http/utils"
 	"github.com/polynetwork/eth_relayer/log"
 	"github.com/polynetwork/eth_relayer/tools"
 	sdk "github.com/polynetwork/poly-go-sdk"
@@ -89,13 +88,13 @@ func (this *CrossTransfer) Deserialization(source *common.ZeroCopySource) error 
 
 type EthereumManager struct {
 	config         *config.ServiceConfig
-	restClient     *utils.RestClient
+	restClient     *tools.RestClient
 	client         *ethclient.Client
 	currentHeight  uint64
 	forceHeight    uint64
 	lockerContract *bind.BoundContract
-	allianceSdk    *sdk.PolySdk
-	allianceSigner *sdk.Account
+	polySdk        *sdk.PolySdk
+	polySigner     *sdk.Account
 	exitChan       chan int
 	header4sync    [][]byte
 	crosstx4sync   []*CrossTransfer
@@ -105,21 +104,21 @@ type EthereumManager struct {
 func NewEthereumManager(servconfig *config.ServiceConfig, startheight uint64, startforceheight uint64, ontsdk *sdk.PolySdk, client *ethclient.Client, boltDB *db.BoltDB) (*EthereumManager, error) {
 	var wallet *sdk.Wallet
 	var err error
-	if !common.FileExisted(servconfig.MultiChainConfig.WalletFile) {
-		wallet, err = ontsdk.CreateWallet(servconfig.MultiChainConfig.WalletFile)
+	if !common.FileExisted(servconfig.PolyConfig.WalletFile) {
+		wallet, err = ontsdk.CreateWallet(servconfig.PolyConfig.WalletFile)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		wallet, err = ontsdk.OpenWallet(servconfig.MultiChainConfig.WalletFile)
+		wallet, err = ontsdk.OpenWallet(servconfig.PolyConfig.WalletFile)
 		if err != nil {
 			log.Errorf("NewETHManager - wallet open error: %s", err.Error())
 			return nil, err
 		}
 	}
-	signer, err := wallet.GetDefaultAccount([]byte(servconfig.MultiChainConfig.WalletPwd))
+	signer, err := wallet.GetDefaultAccount([]byte(servconfig.PolyConfig.WalletPwd))
 	if err != nil || signer == nil {
-		signer, err = wallet.NewDefaultSettingAccount([]byte(servconfig.MultiChainConfig.WalletPwd))
+		signer, err = wallet.NewDefaultSettingAccount([]byte(servconfig.PolyConfig.WalletPwd))
 		if err != nil {
 			log.Errorf("NewETHManager - wallet password error")
 			return nil, err
@@ -133,17 +132,17 @@ func NewEthereumManager(servconfig *config.ServiceConfig, startheight uint64, st
 	log.Infof("NewETHManager - poly address: %s", signer.Address.ToBase58())
 
 	mgr := &EthereumManager{
-		config:         servconfig,
-		exitChan:       make(chan int),
-		currentHeight:  startheight,
-		forceHeight:    startforceheight,
-		restClient:     utils.NewRestClient(),
-		client:         client,
-		allianceSdk:    ontsdk,
-		allianceSigner: signer,
-		header4sync:    make([][]byte, 0),
-		crosstx4sync:   make([]*CrossTransfer, 0),
-		db:             boltDB,
+		config:        servconfig,
+		exitChan:      make(chan int),
+		currentHeight: startheight,
+		forceHeight:   startforceheight,
+		restClient:    tools.NewRestClient(),
+		client:        client,
+		polySdk:       ontsdk,
+		polySigner:    signer,
+		header4sync:   make([][]byte, 0),
+		crosstx4sync:  make([]*CrossTransfer, 0),
+		db:            boltDB,
 	}
 	err = mgr.init()
 	if err != nil {
@@ -236,7 +235,7 @@ func (this *EthereumManager) findLastestHeight() uint64 {
 	contractAddress := autils.HeaderSyncContractAddress
 	key := append([]byte(scom.CURRENT_HEADER_HEIGHT), sideChainIdBytes[:]...)
 	// try to get storage
-	result, err := this.allianceSdk.GetStorage(contractAddress.ToHexString(), key)
+	result, err := this.polySdk.GetStorage(contractAddress.ToHexString(), key)
 	if err != nil {
 		return 0
 	}
@@ -313,11 +312,11 @@ func (this *EthereumManager) fetchLockDepositEvents(height uint64, client *ethcl
 }
 
 func (this *EthereumManager) commitHeader() int {
-	tx, err := this.allianceSdk.Native.Hs.SyncBlockHeader(
+	tx, err := this.polySdk.Native.Hs.SyncBlockHeader(
 		uint64(config.ETH_CHAIN_ID),
-		this.allianceSigner.Address,
+		this.polySigner.Address,
 		this.header4sync,
-		this.allianceSigner,
+		this.polySigner,
 	)
 	if err != nil {
 		log.Warnf("commitHeader - send transaction to multi chain err: %s!", err.Error())
@@ -328,7 +327,16 @@ func (this *EthereumManager) commitHeader() int {
 			return 1
 		}
 	}
-	log.Infof("commitHeader - send transaction to multi chain: %s", tx.ToHexString())
+	tick := time.NewTicker(100 * time.Millisecond)
+	var h uint32
+	for range tick.C {
+		h, _ = this.polySdk.GetBlockHeightByTxHash(tx.ToHexString())
+		curr, _ := this.polySdk.GetCurrentBlockHeight()
+		if h > 0 && curr > h {
+			break
+		}
+	}
+	log.Infof("commitHeader - send transaction %s to poly chain and confirmed on height %d", tx.ToHexString(), h)
 	return 0
 }
 func (this *EthereumManager) MonitorDeposit() {
@@ -383,7 +391,7 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 			log.Errorf("handleLockDepositEvents - error :%s\n", err.Error())
 			continue
 		}
-		//3. commit proof to multichain
+		//3. commit proof to poly
 		txHash, err := this.commitProof(uint32(height), proof, crosstx.value, crosstx.txId)
 		if err != nil {
 			if strings.Contains(err.Error(), "chooseUtxos, current utxo is not enough") {
@@ -412,14 +420,14 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 }
 func (this *EthereumManager) commitProof(height uint32, proof []byte, value []byte, txhash []byte) (string, error) {
 	log.Infof("commit proof, height: %d, proof: %s, value: %s, txhash: %s", height, string(proof), hex.EncodeToString(value), hex.EncodeToString(txhash))
-	tx, err := this.allianceSdk.Native.Ccm.ImportOuterTransfer(
+	tx, err := this.polySdk.Native.Ccm.ImportOuterTransfer(
 		uint64(config.ETH_CHAIN_ID),
 		value,
 		height,
 		proof,
-		ethcommon.Hex2Bytes(this.allianceSigner.Address.ToHexString()),
+		ethcommon.Hex2Bytes(this.polySigner.Address.ToHexString()),
 		[]byte{},
-		this.allianceSigner)
+		this.polySigner)
 	if err != nil {
 		return "", err
 	} else {
@@ -454,7 +462,7 @@ func (this *EthereumManager) checkLockDepositEvents() error {
 	}
 	for k, v := range checkMap {
 		time.Sleep(time.Second * 1)
-		event, err := this.allianceSdk.GetSmartContractEvent(k)
+		event, err := this.polySdk.GetSmartContractEvent(k)
 		if err != nil {
 			return fmt.Errorf("checkLockDepositEvents - this.aliaSdk.GetSmartContractEvent error: %s", err)
 		}
