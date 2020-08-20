@@ -164,10 +164,10 @@ func (this *EthereumManager) MonitorChain() {
 				log.Infof("MonitorChain - cannot get node height, err: %s", err)
 				continue
 			}
-			log.Infof("MonitorChain - eth height is %d", height)
 			if height-this.currentHeight <= config.ETH_USEFUL_BLOCK_NUM {
 				continue
 			}
+			log.Infof("MonitorChain - eth height is %d", height)
 			blockHandleResult = true
 			for this.currentHeight < height-config.ETH_USEFUL_BLOCK_NUM {
 				blockHandleResult = this.handleNewBlock(this.currentHeight + 1)
@@ -319,7 +319,7 @@ func (this *EthereumManager) commitHeader() int {
 		this.polySigner,
 	)
 	if err != nil {
-		log.Warnf("commitHeader - send transaction to multi chain err: %s!", err.Error())
+		log.Warnf("commitHeader - send transaction to poly chain err: %s!", err.Error())
 		errDesc := err.Error()
 		if strings.Contains(errDesc, "get the parent block failed") || strings.Contains(errDesc, "missing required field") {
 			return -1
@@ -414,7 +414,7 @@ func (this *EthereumManager) handleLockDepositEvents(refHeight uint64) error {
 		if err != nil {
 			log.Errorf("handleLockDepositEvents - this.db.PutCheck error: %s", err)
 		}
-		log.Infof("handleLockDepositEvents - syncProofToAlia txHash is :", txHash)
+		log.Infof("handleLockDepositEvents - syncProofToAlia txHash is %s", txHash)
 	}
 	return nil
 }
@@ -431,7 +431,7 @@ func (this *EthereumManager) commitProof(height uint32, proof []byte, value []by
 	if err != nil {
 		return "", err
 	} else {
-		log.Infof("commitProof - send transaction to multi chain: %s, height: %d", tx.ToHexString(), height)
+		log.Infof("commitProof - send transaction to poly chain: %s, height: %d", tx.ToHexString(), height)
 		return tx.ToHexString(), nil
 	}
 }

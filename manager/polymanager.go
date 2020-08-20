@@ -83,7 +83,7 @@ func NewPolyManager(servCfg *config.ServiceConfig, startblockHeight uint32, poly
 				log.Fatalf("failed to input password: %v", err)
 				panic(err)
 			}
-			servCfg.ETHConfig.KeyStorePwdSet[v.Address.String()] = string(raw)
+			servCfg.ETHConfig.KeyStorePwdSet[strings.ToLower(v.Address.String())] = string(raw)
 		}
 	}
 
@@ -101,6 +101,12 @@ func NewPolyManager(servCfg *config.ServiceConfig, startblockHeight uint32, poly
 			}
 			pwd = string(raw)
 		}
+
+		if err := ks.TestPwd(v.acc, pwd); err != nil {
+			log.Fatalf("your password %s for account %s is not working: %v", pwd, v.acc.Address.String(), err)
+			panic(err)
+		}
+
 		v.ethClient = ethereumsdk
 		v.keyStore = ks
 		v.pwd = pwd
@@ -141,24 +147,18 @@ func (this *PolyManager) findLatestHeight() uint32 {
 
 func (this *PolyManager) init() bool {
 	if this.currentHeight > 0 {
+		log.Infof("PolyManager init - start height from flag: %d", this.currentHeight)
 		return true
 	}
 	this.currentHeight = this.db.GetPolyHeight()
 	latestHeight := this.findLatestHeight()
 	if latestHeight > this.currentHeight {
 		this.currentHeight = latestHeight
-		log.Infof("init - latest height from ECCM: %d", this.currentHeight)
+		log.Infof("PolyManager init - latest height from ECCM: %d", this.currentHeight)
 		return true
 	}
-	log.Infof("init - latest height from DB: %d", this.currentHeight)
-	//block, err := this.polySdk.GetBlockByHeight(uint32(this.currentHeight))
-	//if err != nil {
-	//	log.Errorf("init - GetNodeHeader on height :%d failed", 0)
-	//	return false
-	//}
-	//if !this.commitGenesisHeader(block.Header) {
-	//	return false
-	//}
+	log.Infof("PolyManager init - latest height from DB: %d", this.currentHeight)
+
 	return true
 }
 
@@ -177,11 +177,11 @@ func (this *PolyManager) MonitorChain() {
 				log.Errorf("MonitorChain - get poly chain block height error: %s", err)
 				continue
 			}
-			log.Infof("MonitorChain - poly chain current height: %d", latestheight)
 			latestheight--
 			if latestheight-this.currentHeight < config.ONT_USEFUL_BLOCK_NUM {
 				continue
 			}
+			log.Infof("MonitorChain - poly chain current height: %d", latestheight)
 			blockHandleResult = true
 			for this.currentHeight <= latestheight-config.ONT_USEFUL_BLOCK_NUM {
 				blockHandleResult = this.handleDepositEvents(this.currentHeight)
@@ -242,8 +242,11 @@ func (this *PolyManager) handleDepositEvents(height uint32) bool {
 				}
 				cnt++
 				sender := this.selectSender()
-				log.Infof("sender %s is handling poly tx %s", sender.acc.Address.String(), event.TxHash)
-				return sender.commitDepositEventsWithHeader(hdr, []byte(states[5].(string)), hp, anchor)
+				log.Infof("sender %s is handling poly tx ( hash: %s, height: %d )",
+					sender.acc.Address.String(), event.TxHash, height)
+				if !sender.commitDepositEventsWithHeader(hdr, []byte(states[5].(string)), hp, anchor, event.TxHash) {
+					return false
+				}
 			}
 		}
 	}
@@ -282,7 +285,7 @@ func (this *PolyManager) selectSender() *EthSender {
 func (this *PolyManager) Stop() {
 	this.exitChan <- 1
 	close(this.exitChan)
-	log.Infof("multi chain manager exit.")
+	log.Infof("poly chain manager exit.")
 }
 
 type EthSender struct {
@@ -297,27 +300,32 @@ type EthSender struct {
 	contractAbi  *abi.ABI
 }
 
-func (this *EthSender) sendTxToEth(info *EthTxInfo) bool {
+func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 	tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), info.gasLimit, info.gasPrice, info.txData)
-	signedtx, err := this.keyStore.SignTransaction(tx, this.pwd)
+	signedtx, err := this.keyStore.SignTransaction(tx, this.acc, this.pwd)
 	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
 		this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-		return false
+		return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
 	}
 	err = this.ethClient.SendTransaction(context.Background(), signedtx)
 	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
 		this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-		return false
+		return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
 	}
-
-	this.waitTransactionConfirm(signedtx.Hash())
-	return true
+	hash := signedtx.Hash()
+	isSuccess := this.waitTransactionConfirm(hash)
+	if isSuccess {
+		log.Infof("successful to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s)",
+			hash.String(), nonce, info.polyTxHash)
+	} else {
+		log.Errorf("failed to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s)",
+			hash.String(),nonce, info.polyTxHash)
+	}
+	return nil
 }
 
-func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, key []byte, headerProof string, anchorHeader *polytypes.Header) bool {
+func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, key []byte, headerProof string, anchorHeader *polytypes.Header, polyTxHash string) bool {
 	var (
 		sigs       []byte
 		auditpath  []byte
@@ -401,8 +409,8 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, k
 		this.cmap[k] = c
 		go func() {
 			for v := range c {
-				if !this.sendTxToEth(v) {
-					log.Errorf("failed to send tx to ethereum: txData: %s", hex.EncodeToString(v.txData))
+				if err = this.sendTxToEth(v); err != nil {
+					log.Errorf("failed to send tx to ethereum: error: %v, txData: %s", err, hex.EncodeToString(v.txData))
 				}
 			}
 		}()
@@ -413,6 +421,7 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, k
 		contractAddr: contractaddr,
 		gasPrice:     gasPrice,
 		gasLimit:     gasLimit,
+		polyTxHash:   polyTxHash,
 	}
 	return true
 }
@@ -473,19 +482,26 @@ func (this *EthSender) commitHeader(header *polytypes.Header) bool {
 
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 	tx := types.NewTransaction(nonce, contractaddr, big.NewInt(0), gasLimit, gasPrice, txData)
-	signedtx, err := this.keyStore.SignTransaction(tx, this.pwd)
+	signedtx, err := this.keyStore.SignTransaction(tx, this.acc, this.pwd)
 	if err != nil {
 		log.Errorf("commitHeader - sign raw tx error: %s", err.Error())
 		return false
 	}
-
-	err = this.ethClient.SendTransaction(context.Background(), signedtx)
-	if err != nil {
+	if err = this.ethClient.SendTransaction(context.Background(), signedtx); err != nil {
 		log.Errorf("commitHeader - send transaction error:%s\n", err.Error())
 		return false
 	}
 
-	this.waitTransactionConfirm(signedtx.Hash())
+	hash := header.Hash()
+	txhash := signedtx.Hash()
+	isSuccess := this.waitTransactionConfirm(txhash)
+	if isSuccess {
+		log.Infof("successful to relay poly header to ethereum: (header_hash: %s, height: %d, eth_txhash: %s, nonce: %d)",
+			hash.ToHexString(), header.Height, txhash.String(), nonce)
+	} else {
+		log.Errorf("failed to relay poly header to ethereum: (header_hash: %s, height: %d, eth_txhash: %s, nonce: %d)",
+			hash.ToHexString(), header.Height, txhash.String(), nonce)
+	}
 	return true
 }
 
@@ -501,20 +517,23 @@ func (this *EthSender) Balance() (*big.Int, error) {
 	return balance, nil
 }
 
-func (this *EthSender) waitTransactionConfirm(hash ethcommon.Hash) {
-	errNum := 0
-	for errNum < 100 {
+// TODO: check the status of tx
+func (this *EthSender) waitTransactionConfirm(hash ethcommon.Hash) bool {
+	for {
 		time.Sleep(time.Second * 1)
 		_, ispending, err := this.ethClient.TransactionByHash(context.Background(), hash)
-		log.Infof("transaction %s is pending: %d\n", hash.String(), ispending)
 		if err != nil {
-			errNum++
 			continue
 		}
+		log.Debugf("transaction %s is pending: %b\n", hash.String(), ispending)
 		if ispending == true {
 			continue
 		} else {
-			break
+			receipt, err := this.ethClient.TransactionReceipt(context.Background(), hash)
+			if err != nil {
+				continue
+			}
+			return receipt.Status == types.ReceiptStatusSuccessful
 		}
 	}
 }
@@ -524,4 +543,5 @@ type EthTxInfo struct {
 	gasLimit     uint64
 	gasPrice     *big.Int
 	contractAddr ethcommon.Address
+	polyTxHash   string
 }

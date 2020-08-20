@@ -168,7 +168,6 @@ func GetProof(url string, contractAddress string, key string, blockheight string
 	if err != nil {
 		return nil, fmt.Errorf("get_ethproof: marshal req err: %s", err)
 	}
-	fmt.Printf("proof req is:%s\n", string(reqdata))
 	rspdata, err := restClient.SendRestRequest(url, reqdata)
 	if err != nil {
 		return nil, fmt.Errorf("GetProof: send request err: %s", err)

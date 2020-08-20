@@ -49,13 +49,8 @@ func NewEthKeyStore(sigConfig *config.ETHConfig) *EthKeyStore {
 	return service
 }
 
-// TODO: only use the first one now. Will add a account manager in the future.
-func (this *EthKeyStore) SignTransaction(tx *types.Transaction, pwd string) (*types.Transaction, error) {
-	accArr := this.ks.Accounts()
-	if len(accArr) == 0 {
-		return nil, fmt.Errorf("length of accounts is zero")
-	}
-	tx, err := this.ks.SignTxWithPassphrase(accArr[0], pwd, tx, nil)
+func (this *EthKeyStore) SignTransaction(tx *types.Transaction, acc accounts.Account, pwd string) (*types.Transaction, error) {
+	tx, err := this.ks.SignTxWithPassphrase(acc, pwd, tx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -64,4 +59,12 @@ func (this *EthKeyStore) SignTransaction(tx *types.Transaction, pwd string) (*ty
 
 func (this *EthKeyStore) GetAccounts() []accounts.Account {
 	return this.ks.Accounts()
+}
+
+func (this *EthKeyStore) TestPwd(acc accounts.Account, pwd string) error {
+	if err := this.ks.Unlock(acc, pwd); err != nil {
+		return err
+	}
+	_ = this.ks.Lock(acc.Address)
+	return nil
 }
