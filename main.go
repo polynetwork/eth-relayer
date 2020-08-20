@@ -65,16 +65,9 @@ func startServer(ctx *cli.Context) {
 	logLevel := ctx.GlobalInt(cmd.GetFlagName(cmd.LogLevelFlag))
 
 	ld := ctx.GlobalString(cmd.GetFlagName(cmd.LogDir))
-	if ld == "" {
-		log.InitLog(logLevel, "./Log/", log.Stdout)
-	} else {
-		log.InitLog(logLevel, ld, log.Stdout)
-	}
+	log.InitLog(logLevel, ld, log.Stdout)
 
-	configPath := ctx.GlobalString(cmd.GetFlagName(cmd.ConfigPathFlag))
-	if configPath != "" {
-		ConfigPath = configPath
-	}
+	ConfigPath = ctx.GlobalString(cmd.GetFlagName(cmd.ConfigPathFlag))
 	ethstart := ctx.GlobalUint64(cmd.GetFlagName(cmd.EthStartFlag))
 	if ethstart > 0 {
 		StartHeight = ethstart
@@ -166,7 +159,7 @@ func initETHServer(servConfig *config.ServiceConfig, polysdk *sdk.PolySdk, ether
 func initPolyServer(servConfig *config.ServiceConfig, polysdk *sdk.PolySdk, ethereumsdk *ethclient.Client, boltDB *db.BoltDB) {
 	mgr, err := manager.NewPolyManager(servConfig, uint32(PolyStartHeight), polysdk, ethereumsdk, boltDB)
 	if err != nil {
-		log.Error("initPolyServer - PolyServer service start failed")
+		log.Error("initPolyServer - PolyServer service start failed: %v", err)
 		return
 	}
 	go mgr.MonitorChain()

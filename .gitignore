@@ -4,6 +4,8 @@ capital*
 db/bolt.bin
 config.json
 wallet.dat
-config-debug.json
+config-*debug.json
 log/20*
 UTC--*
+*_test.go
+config-main.json

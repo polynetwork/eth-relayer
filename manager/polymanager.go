@@ -71,9 +71,12 @@ func NewPolyManager(servCfg *config.ServiceConfig, startblockHeight uint32, poly
 	if err != nil {
 		return nil, err
 	}
-	ks := tools.NewEthKeyStore(servCfg.ETHConfig)
+	chainId, err := ethereumsdk.ChainID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	ks := tools.NewEthKeyStore(servCfg.ETHConfig, chainId)
 	accArr := ks.GetAccounts()
-
 	if len(servCfg.ETHConfig.KeyStorePwdSet) == 0 {
 		fmt.Println("please input the passwords for ethereum keystore: ")
 		for _, v := range accArr {
@@ -207,7 +210,12 @@ func (this *PolyManager) handleDepositEvents(height uint32) bool {
 		return false
 	}
 	isCurr := lastEpoch < height+1
-	isEpoch := hdr.NextBookkeeper != common.ADDRESS_EMPTY
+	info := &vconfig.VbftBlockInfo{}
+	if err := json.Unmarshal(hdr.ConsensusPayload, info); err != nil {
+		log.Errorf("failed to unmarshal ConsensusPayload for height %d: %v", height+1, err)
+		return false
+	}
+	isEpoch := hdr.NextBookkeeper != common.ADDRESS_EMPTY && info.NewChainConfig != nil
 	var (
 		anchor *polytypes.Header
 		hp     string
@@ -236,17 +244,55 @@ func (this *PolyManager) handleDepositEvents(height uint32) bool {
 				if method != "makeProof" {
 					continue
 				}
-				tchainid := uint32(states[2].(float64))
-				if tchainid != 2 {
+				if uint64(states[2].(float64)) != this.config.ETHConfig.SideChainId {
 					continue
+				}
+				proof, err := this.polySdk.GetCrossStatesProof(hdr.Height-1, states[5].(string))
+				if err != nil {
+					log.Errorf("handleDepositEvents - failed to get proof for key %s: %v", states[5].(string), err)
+					continue
+				}
+				auditpath, _ := hex.DecodeString(proof.AuditPath)
+				value, _, _, _ := tools.ParseAuditpath(auditpath)
+				param := &common2.ToMerkleValue{}
+				if err := param.Deserialization(common.NewZeroCopySource(value)); err != nil {
+					log.Errorf("handleDepositEvents - failed to deserialize MakeTxParam (value: %x, err: %v)", value, err)
+					continue
+				}
+				var isTarget bool
+				if len(this.config.TargetContracts) > 0 {
+					toContractStr := ethcommon.BytesToAddress(param.MakeTxParam.ToContractAddress).String()
+					for _, v := range this.config.TargetContracts {
+						toChainIdArr, ok := v[toContractStr]
+						if ok {
+							if len(toChainIdArr["inbound"]) == 0 {
+								isTarget = true
+								break
+							}
+							for _, id := range toChainIdArr["inbound"] {
+								if id == param.FromChainID {
+									isTarget = true
+									break
+								}
+							}
+							if isTarget {
+								break
+							}
+						}
+					}
+					if !isTarget {
+						continue
+					}
 				}
 				cnt++
 				sender := this.selectSender()
 				log.Infof("sender %s is handling poly tx ( hash: %s, height: %d )",
 					sender.acc.Address.String(), event.TxHash, height)
-				if !sender.commitDepositEventsWithHeader(hdr, []byte(states[5].(string)), hp, anchor, event.TxHash) {
-					return false
-				}
+				// temporarily ignore the error for tx
+				sender.commitDepositEventsWithHeader(hdr, param, hp, anchor, event.TxHash, auditpath)
+				//if !sender.commitDepositEventsWithHeader(hdr, param, hp, anchor, event.TxHash, auditpath) {
+				//	return false
+				//}
 			}
 		}
 	}
@@ -314,21 +360,21 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 		return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
 	}
 	hash := signedtx.Hash()
-	isSuccess := this.waitTransactionConfirm(hash)
+
+	isSuccess := this.waitTransactionConfirm(info.polyTxHash, hash)
 	if isSuccess {
-		log.Infof("successful to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s)",
-			hash.String(), nonce, info.polyTxHash)
+		log.Infof("successful to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s, eth_explorer: %s)",
+			hash.String(), nonce, info.polyTxHash, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
 	} else {
-		log.Errorf("failed to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s)",
-			hash.String(),nonce, info.polyTxHash)
+		log.Errorf("failed to relay tx to ethereum: (eth_hash: %s, nonce: %d, poly_hash: %s, eth_explorer: %s)",
+			hash.String(), nonce, info.polyTxHash, tools.GetExplorerUrl(this.keyStore.GetChainId())+hash.String())
 	}
 	return nil
 }
 
-func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, key []byte, headerProof string, anchorHeader *polytypes.Header, polyTxHash string) bool {
+func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, param *common2.ToMerkleValue, headerProof string, anchorHeader *polytypes.Header, polyTxHash string, rawAuditPath []byte) bool {
 	var (
 		sigs       []byte
-		auditpath  []byte
 		headerData []byte
 	)
 	if anchorHeader != nil && headerProof != "" {
@@ -346,18 +392,6 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, k
 			sigs = append(sigs, newsig...)
 		}
 	}
-	proof, err := this.polySdk.GetCrossStatesProof(header.Height-1, string(key))
-	if err != nil {
-		log.Errorf("commitDepositEventsWithHeader - err: %v", err)
-		return false
-	}
-	auditpath, _ = hex.DecodeString(proof.AuditPath)
-	value, _, _, _ := tools.ParseAuditpath(auditpath)
-	param := &common2.ToMerkleValue{}
-	if err := param.Deserialization(common.NewZeroCopySource(value)); err != nil {
-		log.Errorf("commitDepositEventsWithHeader - failed to deserialize MakeTxParam: %v", err)
-		return false
-	}
 
 	eccdAddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCDContractAddress)
 	eccd, err := eccd_abi.NewEthCrossChainData(eccdAddr, this.ethClient)
@@ -372,15 +406,15 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, k
 			param.FromChainID, param.TxHash, param.MakeTxParam.TxHash)
 		return true
 	}
-	log.Infof("poly proof with header, height: %d, key: %s, proof: %s", header.Height-1, string(key), proof.AuditPath)
+	//log.Infof("poly proof with header, height: %d, key: %s, proof: %s", header.Height-1, string(key), proof.AuditPath)
 
 	rawProof, _ := hex.DecodeString(headerProof)
 	var rawAnchor []byte
 	if anchorHeader != nil {
-		rawAnchor = anchorHeader.ToArray()
+		rawAnchor = anchorHeader.GetMessage()
 	}
 	headerData = header.GetMessage()
-	txData, err := this.contractAbi.Pack("verifyHeaderAndExecuteTx", auditpath, headerData, rawProof, rawAnchor, sigs)
+	txData, err := this.contractAbi.Pack("verifyHeaderAndExecuteTx", rawAuditPath, headerData, rawProof, rawAnchor, sigs)
 	if err != nil {
 		log.Errorf("commitDepositEventsWithHeader - err:" + err.Error())
 		return false
@@ -494,13 +528,13 @@ func (this *EthSender) commitHeader(header *polytypes.Header) bool {
 
 	hash := header.Hash()
 	txhash := signedtx.Hash()
-	isSuccess := this.waitTransactionConfirm(txhash)
+	isSuccess := this.waitTransactionConfirm(fmt.Sprintf("header: %d", header.Height), txhash)
 	if isSuccess {
-		log.Infof("successful to relay poly header to ethereum: (header_hash: %s, height: %d, eth_txhash: %s, nonce: %d)",
-			hash.ToHexString(), header.Height, txhash.String(), nonce)
+		log.Infof("successful to relay poly header to ethereum: (header_hash: %s, height: %d, eth_txhash: %s, nonce: %d, eth_explorer: %s)",
+			hash.ToHexString(), header.Height, txhash.String(), nonce, tools.GetExplorerUrl(this.keyStore.GetChainId())+txhash.String())
 	} else {
-		log.Errorf("failed to relay poly header to ethereum: (header_hash: %s, height: %d, eth_txhash: %s, nonce: %d)",
-			hash.ToHexString(), header.Height, txhash.String(), nonce)
+		log.Errorf("failed to relay poly header to ethereum: (header_hash: %s, height: %d, eth_txhash: %s, nonce: %d, eth_explorer: %s)",
+			hash.ToHexString(), header.Height, txhash.String(), nonce, tools.GetExplorerUrl(this.keyStore.GetChainId())+txhash.String())
 	}
 	return true
 }
@@ -518,14 +552,14 @@ func (this *EthSender) Balance() (*big.Int, error) {
 }
 
 // TODO: check the status of tx
-func (this *EthSender) waitTransactionConfirm(hash ethcommon.Hash) bool {
+func (this *EthSender) waitTransactionConfirm(polyTxHash string, hash ethcommon.Hash) bool {
 	for {
 		time.Sleep(time.Second * 1)
 		_, ispending, err := this.ethClient.TransactionByHash(context.Background(), hash)
 		if err != nil {
 			continue
 		}
-		log.Debugf("transaction %s is pending: %b\n", hash.String(), ispending)
+		log.Debugf("( eth_transaction %s, poly_tx %s ) is pending: %v", hash.String(), polyTxHash, ispending)
 		if ispending == true {
 			continue
 		} else {

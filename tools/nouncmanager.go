@@ -74,6 +74,9 @@ func (this *NonceManager) GetAddressNonce(address common.Address) uint64 {
 }
 
 func (this *NonceManager) ReturnNonce(addr common.Address, nonce uint64) {
+	this.lock.Lock()
+	defer this.lock.Unlock()
+
 	arr, ok := this.returnedNonce[addr]
 	if !ok {
 		arr = make([]uint64, 0)
