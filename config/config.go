@@ -28,14 +28,12 @@ import (
 )
 
 const (
-	ETH_MONITOR_INTERVAL = 3 * time.Second
-	ONT_MONITOR_INTERVAL = 3 * time.Second
-	KEY_UNLOCK_TIME      = 30 * time.Second
+	ETH_MONITOR_INTERVAL = time.Second
+	ONT_MONITOR_INTERVAL = time.Second
 
 	ETH_USEFUL_BLOCK_NUM     = 3
 	ETH_PROOF_USERFUL_BLOCK  = 12
 	ONT_USEFUL_BLOCK_NUM     = 1
-	ETH_CHAIN_ID             = 2
 	DEFAULT_CONFIG_FILE_NAME = "./config.json"
 	Version                  = "1.0"
 
@@ -51,10 +49,11 @@ const (
 //}
 
 type ServiceConfig struct {
-	PolyConfig *PolyConfig
-	ETHConfig  *ETHConfig
-	BoltDbPath string
-	RoutineNum int64
+	PolyConfig      *PolyConfig
+	ETHConfig       *ETHConfig
+	BoltDbPath      string
+	RoutineNum      int64
+	TargetContracts []map[string]map[string][]uint64
 }
 
 type PolyConfig struct {
@@ -65,12 +64,14 @@ type PolyConfig struct {
 }
 
 type ETHConfig struct {
+	SideChainId         uint64
 	RestURL             string
 	ECCMContractAddress string
 	ECCDContractAddress string
 	KeyStorePath        string
 	KeyStorePwdSet      map[string]string
 	BlockConfig         uint64
+	HeadersPerBatch     int
 }
 
 type ONTConfig struct {
