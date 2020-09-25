@@ -9,3 +9,4 @@ log/20*
 UTC--*
 *_test.go
 config-main.json
+config-debug-dev.json
