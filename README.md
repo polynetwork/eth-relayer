@@ -33,6 +33,7 @@ Before running, you need feed the configuration file `config.json`.
     "WalletPwd":"pwd" //password
   },
   "ETHConfig":{
+    "SideChainId": 2, // ethereum chainID
     "RestURL":"http://etheruem:port", // your ethereum node 
     "ECCMContractAddress":"ethereum_cross_chain_contract", 
     "ECCDContractAddress":"ethereum_cross_chain_data_contract",
@@ -41,9 +42,19 @@ Before running, you need feed the configuration file `config.json`.
       "0xd12e...54ccacf91ca364d": "pwd1", // password for address "0xd12e...54ccacf91ca364d"
       "0xabb4...0aba7cf3ee3b953": "pwd2" // password for address "0xabb4...0aba7cf3ee3b953"
     },
-    "BlockConfig": 12 // blocks to confirm a ethereum tx
+    "BlockConfig": 12, // blocks to confirm a ethereum tx
+    "HeadersPerBatch": 500 // number of poly headers commited to ECCM in one transaction at most
   },
-  "BoltDbPath": "./db" // DB path
+  "BoltDbPath": "./db", // DB path
+  "RoutineNum": 64,
+  "TargetContracts": [
+    {
+      "0xD8aE73e06552E...bcAbf9277a1aac99": { // your lockproxy hash
+        "inbound": [6], // from which chain allowed
+        "outbound": [6] // to which chain allowed
+      }
+    }
+  ]
 }
 ```
 
