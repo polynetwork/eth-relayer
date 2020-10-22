@@ -18,6 +18,14 @@ go build -o eth_relayer main.go
 
 After building the source code successfully,  you should see the executable program `eth_relayer`. 
 
+### Build Docker Image
+
+```
+docker build -t polynetwork/eth_relayer -f Dockerfile ./
+```
+
+This command will copy ./config.json to /app/config.json in the image. So you need to prepare config.json before running this command and you should start the eth-relayer in container basing on the configuration in /app/config.json.
+
 ## Run Relayer
 
 Before you can run the relayer you will need to create a wallet file of PolyNetwork. After creation, you need to register it as a Relayer to Poly net and get consensus nodes approving your registeration. And then you can send transaction to Poly net and start relaying.
