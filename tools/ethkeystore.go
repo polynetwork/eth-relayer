@@ -24,6 +24,7 @@ import (
 	"github.com/polynetwork/eth_relayer/config"
 	"github.com/polynetwork/eth_relayer/log"
 	"math/big"
+	"strings"
 )
 
 type EthKeyStore struct {
@@ -45,14 +46,23 @@ func NewEthKeyStore(sigConfig *config.ETHConfig, chainId *big.Int) *EthKeyStore 
 		str += fmt.Sprintf("(no.%d acc: %s), ", i+1, v.Address.String())
 	}
 	log.Infof("relayer are using accounts: [ %s ]", str)
-
 	service.ks = capitalKeyStore
 	service.chainId = chainId
 	return service
 }
 
-func (this *EthKeyStore) SignTransaction(tx *types.Transaction, acc accounts.Account, pwd string) (*types.Transaction, error) {
-	tx, err := this.ks.SignTxWithPassphrase(acc, pwd, tx, this.chainId)
+func (this *EthKeyStore) UnlockKeys(sigConfig *config.ETHConfig) error {
+	for _, v := range this.GetAccounts() {
+		err := this.ks.Unlock(v, sigConfig.KeyStorePwdSet[strings.ToLower(v.Address.String())])
+		if err != nil {
+			return fmt.Errorf("failed to unlock eth acc %s: %v", v.Address.String(), err)
+		}
+	}
+	return nil
+}
+
+func (this *EthKeyStore) SignTransaction(tx *types.Transaction, acc accounts.Account) (*types.Transaction, error) {
+	tx, err := this.ks.SignTx(acc, tx, this.chainId)
 	if err != nil {
 		return nil, err
 	}
