@@ -41,7 +41,7 @@ func NewNonceManager(ethClient *ethclient.Client) *NonceManager {
 		ethClient:     ethClient,
 		returnedNonce: make(map[common.Address]SortedNonceArr),
 	}
-	go nonceManager.clearNonce()
+	//go nonceManager.clearNonce()
 	return nonceManager
 }
 

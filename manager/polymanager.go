@@ -89,30 +89,17 @@ func NewPolyManager(servCfg *config.ServiceConfig, startblockHeight uint32, poly
 			servCfg.ETHConfig.KeyStorePwdSet[strings.ToLower(v.Address.String())] = string(raw)
 		}
 	}
+	if err = ks.UnlockKeys(servCfg.ETHConfig); err != nil {
+		return nil, err
+	}
 
 	senders := make([]*EthSender, len(accArr))
 	for i, v := range senders {
 		v = &EthSender{}
 		v.acc = accArr[i]
-		pwd, ok := servCfg.ETHConfig.KeyStorePwdSet[strings.ToLower(v.acc.Address.String())]
-		if !ok {
-			fmt.Printf("Password for address %s is not found in configuration, please input ", v.acc.Address.String())
-			raw, err := password.GetPassword()
-			if err != nil {
-				log.Fatalf("failed to input password: %v", err)
-				panic(err)
-			}
-			pwd = string(raw)
-		}
-
-		if err := ks.TestPwd(v.acc, pwd); err != nil {
-			log.Fatalf("your password %s for account %s is not working: %v", pwd, v.acc.Address.String(), err)
-			panic(err)
-		}
 
 		v.ethClient = ethereumsdk
 		v.keyStore = ks
-		v.pwd = pwd
 		v.config = servCfg
 		v.polySdk = polySdk
 		v.contractAbi = &contractabi
@@ -335,7 +322,6 @@ func (this *PolyManager) Stop() {
 }
 
 type EthSender struct {
-	pwd          string
 	acc          accounts.Account
 	keyStore     *tools.EthKeyStore
 	cmap         map[string]chan *EthTxInfo
@@ -349,7 +335,7 @@ type EthSender struct {
 func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 	tx := types.NewTransaction(nonce, info.contractAddr, big.NewInt(0), info.gasLimit, info.gasPrice, info.txData)
-	signedtx, err := this.keyStore.SignTransaction(tx, this.acc, this.pwd)
+	signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
 	if err != nil {
 		this.nonceManager.ReturnNonce(this.acc.Address, nonce)
 		return fmt.Errorf("commitDepositEventsWithHeader - sign raw tx error and return nonce %d: %v", nonce, err)
@@ -357,7 +343,7 @@ func (this *EthSender) sendTxToEth(info *EthTxInfo) error {
 	err = this.ethClient.SendTransaction(context.Background(), signedtx)
 	if err != nil {
 		this.nonceManager.ReturnNonce(this.acc.Address, nonce)
-		return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v\n", nonce, err)
+		return fmt.Errorf("commitDepositEventsWithHeader - send transaction error and return nonce %d: %v", nonce, err)
 	}
 	hash := signedtx.Hash()
 
@@ -516,7 +502,7 @@ func (this *EthSender) commitHeader(header *polytypes.Header) bool {
 
 	nonce := this.nonceManager.GetAddressNonce(this.acc.Address)
 	tx := types.NewTransaction(nonce, contractaddr, big.NewInt(0), gasLimit, gasPrice, txData)
-	signedtx, err := this.keyStore.SignTransaction(tx, this.acc, this.pwd)
+	signedtx, err := this.keyStore.SignTransaction(tx, this.acc)
 	if err != nil {
 		log.Errorf("commitHeader - sign raw tx error: %s", err.Error())
 		return false
