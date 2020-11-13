@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ontio/ontology-crypto/ec"
 	"github.com/ontio/ontology-crypto/keypair"
@@ -286,4 +287,18 @@ func GetExplorerUrl(chainId uint64) string {
 	default:
 		return "no url"
 	}
+}
+
+
+func GetEthNoCompressKey(key keypair.PublicKey) []byte {
+	var buf bytes.Buffer
+	switch t := key.(type) {
+	case *ec.PublicKey:
+		return crypto.FromECDSAPub(t.PublicKey)
+	case ed25519.PublicKey:
+		panic("err")
+	default:
+		panic("err")
+	}
+	return buf.Bytes()
 }

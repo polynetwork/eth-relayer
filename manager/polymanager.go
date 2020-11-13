@@ -17,6 +17,7 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -25,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ontio/ontology-crypto/keypair"
 	"github.com/ontio/ontology-crypto/signature"
@@ -189,20 +191,59 @@ func (this *PolyManager) MonitorChain() {
 	}
 }
 
+func (this *PolyManager) IsEpoch(hdr *polytypes.Header) (bool, []byte, error) {
+	blkInfo := &vconfig.VbftBlockInfo{}
+	if err := json.Unmarshal(hdr.ConsensusPayload, blkInfo); err != nil {
+		return false, nil, fmt.Errorf("commitHeader - unmarshal blockInfo error: %s", err)
+	}
+	if hdr.NextBookkeeper == common.ADDRESS_EMPTY || blkInfo.NewChainConfig == nil {
+		return false, nil, nil
+	}
+
+	eccdAddr := ethcommon.HexToAddress(this.config.ETHConfig.ECCDContractAddress)
+	eccd, err := eccd_abi.NewEthCrossChainData(eccdAddr, this.ethClient)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to new eccm: %v", err)
+	}
+	rawKeepers, err := eccd.GetCurEpochConPubKeyBytes(nil)
+	if err != nil {
+		return false, nil, fmt.Errorf("failed to get current epoch keepers: %v", err)
+	}
+
+	var bookkeepers []keypair.PublicKey
+	for _, peer := range blkInfo.NewChainConfig.Peers {
+		keystr, _ := hex.DecodeString(peer.ID)
+		key, _ := keypair.DeserializePublicKey(keystr)
+		bookkeepers = append(bookkeepers, key)
+	}
+	bookkeepers = keypair.SortPublicKeys(bookkeepers)
+	publickeys := make([]byte, 0)
+	sink := common.NewZeroCopySink(nil)
+	sink.WriteUint64(uint64(len(bookkeepers)))
+	for _, key := range bookkeepers {
+		raw := tools.GetNoCompresskey(key)
+		publickeys = append(publickeys, raw...)
+		sink.WriteVarBytes(crypto.Keccak256(tools.GetEthNoCompressKey(key)[1:])[12:])
+	}
+	if bytes.Equal(rawKeepers, sink.Bytes()) {
+		return false, nil, nil
+	}
+	return true, publickeys, nil
+}
+
 func (this *PolyManager) handleDepositEvents(height uint32) bool {
 	lastEpoch := this.findLatestHeight()
 	hdr, err := this.polySdk.GetHeaderByHeight(height + 1)
 	if err != nil {
-		log.Errorf("handleBlockHeader - GetNodeHeader on height :%d failed", height)
+		log.Errorf("handleDepositEvents - GetNodeHeader on height :%d failed", height)
 		return false
 	}
 	isCurr := lastEpoch < height+1
-	info := &vconfig.VbftBlockInfo{}
-	if err := json.Unmarshal(hdr.ConsensusPayload, info); err != nil {
-		log.Errorf("failed to unmarshal ConsensusPayload for height %d: %v", height+1, err)
+	isEpoch, pubkList, err := this.IsEpoch(hdr)
+	if err != nil {
+		log.Errorf("falied to check isEpoch: %v", err)
 		return false
 	}
-	isEpoch := hdr.NextBookkeeper != common.ADDRESS_EMPTY && info.NewChainConfig != nil
 	var (
 		anchor *polytypes.Header
 		hp     string
@@ -285,7 +326,7 @@ func (this *PolyManager) handleDepositEvents(height uint32) bool {
 	}
 	if cnt == 0 && isEpoch && isCurr {
 		sender := this.selectSender()
-		return sender.commitHeader(hdr)
+		return sender.commitHeader(hdr, pubkList)
 	}
 
 	return true
@@ -446,12 +487,11 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 	return true
 }
 
-func (this *EthSender) commitHeader(header *polytypes.Header) bool {
+func (this *EthSender) commitHeader(header *polytypes.Header, pubkList []byte) bool {
 	headerdata := header.GetMessage()
 	var (
 		txData      []byte
 		txErr       error
-		bookkeepers []keypair.PublicKey
 		sigs        []byte
 	)
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
@@ -466,23 +506,7 @@ func (this *EthSender) commitHeader(header *polytypes.Header) bool {
 		sigs = append(sigs, newsig...)
 	}
 
-	blkInfo := &vconfig.VbftBlockInfo{}
-	if err := json.Unmarshal(header.ConsensusPayload, blkInfo); err != nil {
-		log.Errorf("commitHeader - unmarshal blockInfo error: %s", err)
-		return false
-	}
-
-	for _, peer := range blkInfo.NewChainConfig.Peers {
-		keystr, _ := hex.DecodeString(peer.ID)
-		key, _ := keypair.DeserializePublicKey(keystr)
-		bookkeepers = append(bookkeepers, key)
-	}
-	bookkeepers = keypair.SortPublicKeys(bookkeepers)
-	publickeys := make([]byte, 0)
-	for _, key := range bookkeepers {
-		publickeys = append(publickeys, tools.GetNoCompresskey(key)...)
-	}
-	txData, txErr = this.contractAbi.Pack("changeBookKeeper", headerdata, publickeys, sigs)
+	txData, txErr = this.contractAbi.Pack("changeBookKeeper", headerdata, pubkList, sigs)
 	if txErr != nil {
 		log.Errorf("commitHeader - err:" + err.Error())
 		return false
