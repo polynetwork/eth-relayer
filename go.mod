@@ -7,6 +7,7 @@ require (
 	github.com/btcsuite/btcd v0.20.1-beta
 	github.com/cmars/basen v0.0.0-20150613233007-fe3947df716e // indirect
 	github.com/ethereum/go-ethereum v1.9.15
+	github.com/ontio/ontology v1.11.0
 	github.com/ontio/ontology-crypto v1.0.9
 	github.com/polynetwork/btc-relayer v0.0.0-20200821091317-c0f8dde8d4cb // indirect
 	github.com/polynetwork/btc-vendor-tools v0.0.0-20200813091748-3b19a5fd7666
