@@ -24,9 +24,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ontio/ontology/smartcontract/service/native/cross_chain/cross_chain_manager"
 	"github.com/polynetwork/eth-contracts/go_abi/eccm_abi"
 	"github.com/polynetwork/eth_relayer/config"
 	"github.com/polynetwork/eth_relayer/db"
+	common2 "github.com/polynetwork/poly/native/service/cross_chain_manager/common"
 	"math/big"
 	"strings"
 	"time"
@@ -181,10 +183,9 @@ func (this *EthereumManager) MonitorChain() {
 						blockHandleResult = false
 						break
 					}
-					this.header4sync = make([][]byte, 0)
 				}
 			}
-			if blockHandleResult {
+			if blockHandleResult && len(this.header4sync) > 0 {
 				this.commitHeader()
 			}
 		case <-this.exitChan:
@@ -239,12 +240,17 @@ func (this *EthereumManager) handleNewBlock(height uint64) bool {
 }
 
 func (this *EthereumManager) handleBlockHeader(height uint64) bool {
-	header, err := tools.GetNodeHeader(this.config.ETHConfig.RestURL, this.restClient, height)
+	hdr, err := this.client.HeaderByNumber(context.Background(), big.NewInt(int64(height)))
 	if err != nil {
 		log.Errorf("handleBlockHeader - GetNodeHeader on height :%d failed", height)
 		return false
 	}
-	this.header4sync = append(this.header4sync, header)
+	rawHdr, _ := hdr.MarshalJSON()
+	raw, _ := this.polySdk.GetStorage(autils.HeaderSyncContractAddress.ToHexString(),
+		append(append([]byte(scom.MAIN_CHAIN), autils.GetUint64Bytes(this.config.ETHConfig.SideChainId)...), autils.GetUint64Bytes(height)...))
+	if len(raw) == 0 || !bytes.Equal(raw, hdr.Hash().Bytes()) {
+		this.header4sync = append(this.header4sync, rawHdr)
+	}
 	return true
 }
 
@@ -295,6 +301,15 @@ func (this *EthereumManager) fetchLockDepositEvents(height uint64, client *ethcl
 			if !isTarget {
 				continue
 			}
+		}
+		param := &common2.MakeTxParam{}
+		_ = param.Deserialization(common.NewZeroCopySource([]byte(evt.Rawdata)))
+		raw, _ := this.polySdk.GetStorage(autils.CrossChainManagerContractAddress.ToHexString(),
+			append(append([]byte(cross_chain_manager.DONE_TX), autils.GetUint64Bytes(this.config.ETHConfig.SideChainId)...), param.CrossChainID...))
+		if len(raw) != 0 {
+			log.Debugf("fetchLockDepositEvents - ccid %s (tx_hash: %s) already on poly",
+				hex.EncodeToString(param.CrossChainID), evt.Raw.TxHash.Hex())
+			continue
 		}
 		index := big.NewInt(0)
 		index.SetBytes(evt.TxId)
