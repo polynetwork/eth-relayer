@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	ETH_MONITOR_INTERVAL = time.Second
-	ONT_MONITOR_INTERVAL = time.Second
+	ETH_MONITOR_INTERVAL  = 15 * time.Second
+	POLY_MONITOR_INTERVAL = 1 * time.Second
 
 	ETH_USEFUL_BLOCK_NUM     = 3
 	ETH_PROOF_USERFUL_BLOCK  = 12
@@ -39,14 +39,6 @@ const (
 
 	DEFAULT_LOG_LEVEL = log.InfoLog
 )
-
-//type ETH struct {
-//	Chain             string // eth or etc
-//	ChainId           uint64
-//	RpcAddress        string
-//	ConfirmedBlockNum uint
-//	//Tokens            []*Token
-//}
 
 type ServiceConfig struct {
 	PolyConfig      *PolyConfig
@@ -72,10 +64,7 @@ type ETHConfig struct {
 	KeyStorePwdSet      map[string]string
 	BlockConfig         uint64
 	HeadersPerBatch     int
-}
-
-type ONTConfig struct {
-	RestURL string
+	MonitorInterval     uint64
 }
 
 func ReadFile(fileName string) ([]byte, error) {

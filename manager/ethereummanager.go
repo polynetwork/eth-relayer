@@ -156,7 +156,7 @@ func NewEthereumManager(servconfig *config.ServiceConfig, startheight uint64, st
 }
 
 func (this *EthereumManager) MonitorChain() {
-	fetchBlockTicker := time.NewTicker(config.ETH_MONITOR_INTERVAL)
+	fetchBlockTicker := time.NewTicker(time.Duration(this.config.ETHConfig.MonitorInterval) * time.Second)
 	var blockHandleResult bool
 	for {
 		select {
@@ -172,6 +172,9 @@ func (this *EthereumManager) MonitorChain() {
 			log.Infof("MonitorChain - eth height is %d", height)
 			blockHandleResult = true
 			for this.currentHeight < height-config.ETH_USEFUL_BLOCK_NUM {
+				if this.currentHeight%10 == 0 {
+					log.Infof("handle confirmed eth Block height: %d", this.currentHeight)
+				}
 				blockHandleResult = this.handleNewBlock(this.currentHeight + 1)
 				if blockHandleResult == false {
 					break
@@ -385,20 +388,18 @@ func (this *EthereumManager) rollBackToCommAncestor() {
 }
 
 func (this *EthereumManager) MonitorDeposit() {
-	monitorTicker := time.NewTicker(config.ETH_MONITOR_INTERVAL)
+	monitorTicker := time.NewTicker(time.Duration(this.config.ETHConfig.MonitorInterval) * time.Second)
 	for {
 		select {
 		case <-monitorTicker.C:
 			height, err := tools.GetNodeHeight(this.config.ETHConfig.RestURL, this.restClient)
 			if err != nil {
-				log.Infof("MonitorChain - cannot get node height, err: %s", err)
+				log.Infof("MonitorDeposit - cannot get eth node height, err: %s", err)
 				continue
 			}
 			snycheight := this.findLastestHeight()
-			if snycheight > height-config.ETH_PROOF_USERFUL_BLOCK {
-				// try to handle deposit event when we are at latest height
-				this.handleLockDepositEvents(snycheight)
-			}
+			log.Log.Info("MonitorDeposit from eth - snyced eth height", snycheight, "eth height", height, "diff", height-snycheight)
+			this.handleLockDepositEvents(snycheight)
 		case <-this.exitChan:
 			return
 		}
@@ -495,7 +496,7 @@ func (this *EthereumManager) parserValue(value []byte) []byte {
 	return txHash
 }
 func (this *EthereumManager) CheckDeposit() {
-	checkTicker := time.NewTicker(config.ETH_MONITOR_INTERVAL)
+	checkTicker := time.NewTicker(time.Duration(this.config.ETHConfig.MonitorInterval) * time.Second)
 	for {
 		select {
 		case <-checkTicker.C:
