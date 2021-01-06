@@ -159,7 +159,7 @@ func (this *PolyManager) MonitorChain() {
 	if ret == false {
 		log.Errorf("MonitorChain - init failed\n")
 	}
-	monitorTicker := time.NewTicker(config.ONT_MONITOR_INTERVAL)
+	monitorTicker := time.NewTicker(config.POLY_MONITOR_INTERVAL)
 	var blockHandleResult bool
 	for {
 		select {
@@ -176,6 +176,9 @@ func (this *PolyManager) MonitorChain() {
 			log.Infof("MonitorChain - poly chain current height: %d", latestheight)
 			blockHandleResult = true
 			for this.currentHeight <= latestheight-config.ONT_USEFUL_BLOCK_NUM {
+				if this.currentHeight%10 == 0 {
+					log.Infof("handle confirmed poly Block height: %d", this.currentHeight)
+				}
 				blockHandleResult = this.handleDepositEvents(this.currentHeight)
 				if blockHandleResult == false {
 					break
@@ -490,9 +493,9 @@ func (this *EthSender) commitDepositEventsWithHeader(header *polytypes.Header, p
 func (this *EthSender) commitHeader(header *polytypes.Header, pubkList []byte) bool {
 	headerdata := header.GetMessage()
 	var (
-		txData      []byte
-		txErr       error
-		sigs        []byte
+		txData []byte
+		txErr  error
+		sigs   []byte
 	)
 	gasPrice, err := this.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
